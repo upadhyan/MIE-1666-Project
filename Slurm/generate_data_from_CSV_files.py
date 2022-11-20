@@ -6,7 +6,14 @@ import logging
 import numpy as np
 import time
 import sys        
- 
+import pandas as pd
+
+
+'''
+
+CHANGE THIS TO YOUR PATH
+
+'''
 # appending the directory of mod.py
 # in the sys.path list
 sys.path.append('/home/arnaud/Documents/ACS/Adaptive-Cutsel-MILP-main')       
@@ -81,7 +88,7 @@ def run_clean_up_slurm_job_and_wait(outfile_dir, temp_dir, dependencies):
         time.sleep(30)
 
 
-def run_slurm_jobs_get_yml_and_log_files(data_dir, temp_dir, outfile_dir, instances, rand_seeds, root=True):
+def run_slurm_jobs_get_yml_and_log_files(data_dir, temp_dir, outfile_dir, instances, rand_seeds, root=True,dict_ =  dict):
     """
     It solves a run for all instance and random seed combinations. It then creates a YML file on the statistics,
     a .stats file containing the SCIP output of the statistics, and a .log file containing the log output of the run.
@@ -120,7 +127,7 @@ def run_slurm_jobs_get_yml_and_log_files(data_dir, temp_dir, outfile_dir, instan
     # Start all the individual jobs that solve and instance and a random seed
     for instance in instances:
         for rand_seed in rand_seeds:
-            save_default_cut_selector_param_npy_file(temp_dir, instance, rand_seed)
+            save_default_cut_selector_param_npy_file(temp_dir, instance, rand_seed,dict_)
             mps_file = get_filename(data_dir, instance, rand_seed, trans=True, root=False, sample_i=None, ext='mps')
             run_slurm_job_with_random_seed(temp_dir, outfile_dir, mps_file, instance, rand_seed,
                                                 time_limit, root, False, True, exclusive=True)
@@ -210,7 +217,7 @@ def run_slurm_jobs_get_yml_and_log_files(data_dir, temp_dir, outfile_dir, instan
     return instances
 
 
-def run_slurm_jobs_get_solution_files(data_dir, temp_dir, outfile_dir, instances, rand_seeds):
+def run_slurm_jobs_get_solution_files(data_dir, temp_dir, outfile_dir, instances, rand_seeds,dict_):
     """
     The function for generating calls to Slurm/solve_instance_seed_noise.py that will solve a SCIP
     instance that is only restricted by run-time. This run will be used to see if a feasible solution for the
@@ -237,7 +244,7 @@ def run_slurm_jobs_get_solution_files(data_dir, temp_dir, outfile_dir, instances
 
     for instance in instances:
         for rand_seed in rand_seeds:
-            save_default_cut_selector_param_npy_file(temp_dir, instance, rand_seed)
+            save_default_cut_selector_param_npy_file(temp_dir, instance, rand_seed,dict_)
      
             mps_file = get_filename(data_dir, instance, rand_seed, trans=True, root=False, sample_i=None, ext='mps')
 
@@ -280,7 +287,7 @@ def run_slurm_jobs_get_solution_files(data_dir, temp_dir, outfile_dir, instances
     return instances
 
 
-def save_default_cut_selector_param_npy_file(temp_dir, instance, rand_seed):
+def save_default_cut_selector_param_npy_file(temp_dir, instance, rand_seed,dict_):
     """
     Creates a npy file for the default cut-selector parameter values
     Args:
@@ -290,13 +297,10 @@ def save_default_cut_selector_param_npy_file(temp_dir, instance, rand_seed):
 
     Returns: Nothing, just creates a file
     """
-    cut_selector_params
+    cut_selector_params = dict_[instance]
 
-    print(temp_dir)
-    print(instance)
-    exit()
-
-    cut_selector_params = np.array([0.0, 1.0, 0.1, 0.1])
+    cut_selector_params = np.array(cut_selector_params)
+    #cut_selector_params = np.array([0.0, 1.0, 0.1, 0.1])
     file_name = get_filename(temp_dir, instance, rand_seed, trans=True, root=False, sample_i=0, ext='npy')
     np.save(file_name, cut_selector_params)
 
@@ -539,8 +543,22 @@ if __name__ == "__main__":
     parser.add_argument('temp_dir', type=str,default="/home/arnaud/Documents/ACS/Adaptive-Cutsel-MILP-main/experiment")
     parser.add_argument('outfile_dir', type=str,default = "/home/arnaud/Documents/ACS/Adaptive-Cutsel-MILP-main/output_files")
     parser.add_argument('num_rand_seeds', type=int,default =1)
+    parser.add_argument('csv_path', type=str,default ="/home/arnaud/Documents/Cut_Opt/data/table_page_21.csv")
     args = parser.parse_args()
 
+
+
+    df = pd.read_csv(args.csv_path)
+    instance_names = df['Instance'].tolist()
+    lambda_1s = df['lambda1'].tolist()
+    lambda_2s = df['lambda2'].tolist()
+    lambda_3s = df['lambda3'].tolist()
+    lambda_4s = df['lambda4'].tolist()
+    cut_params_dict = {}
+    for i,inst in enumerate(instance_names):
+        cut_params_dict[inst] = [lambda_1s[i],lambda_2s[i],lambda_3s[i],lambda_4s[i]]
+
+   
     # Remove all solve information from previous runs
     remove_previous_run_data(args.transformed_problem_dir)
     remove_temp_files(args.temp_dir)
@@ -579,13 +597,13 @@ if __name__ == "__main__":
         # We then filter those instances which cannot produce primal solutions
         print('Finding primal solutions to pre-solved instances', flush=True)
         run_slurm_jobs_get_solution_files(args.transformed_problem_dir, args.temp_dir,
-                                                           args.outfile_dir, instance_names, random_seeds)
+                                                           args.outfile_dir, instance_names, random_seeds,dict_= cut_params_dict)
         
    
     # We now produce YML files containing solve information for our root-node restricted solves.
     print('Producing root-node restricted solve statistics in YML files', flush=True)
     run_slurm_jobs_get_yml_and_log_files(args.transformed_problem_dir, args.temp_dir, args.outfile_dir,
-                                                          instance_names, random_seeds, True)
+                                                          instance_names, random_seeds, True,dict_ = cut_params_dict)
     #remove_temp_files(args.temp_dir)
 
     # Finally we produce YML files containing solve information for our un-restricted solves
